@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<link rel="apple-touch-icon" href="icon.png"/>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="mobile-web-app-capable" content="yes"/>
@@ -9,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
 <meta name="apple-mobile-web-app-title" content="Logbook"/>
 <title>Surgical Logbook</title>
+<link rel="apple-touch-icon" href="icon.png"/>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -151,10 +151,14 @@ let sugFiltered = [];
 let activeIdx = -1;
 let tokenClient = null;
 
-function onGoogleSignIn(response) {
-  const payload = JSON.parse(atob(response.credential.split('.')[1]));
-  document.getElementById("userInfo").textContent = payload.email;
-  tokenClient.requestAccessToken();
+function startSignIn() {
+  if (!tokenClient) { showSigninError("Google library not loaded yet, please wait a moment and try again."); return; }
+  tokenClient.requestAccessToken({prompt:"consent"});
+}
+
+function showSigninError(msg) {
+  const el = document.getElementById("signinError");
+  el.textContent = msg; el.style.display = "block";
 }
 
 window.onGoogleLibraryLoad = function() {
@@ -162,8 +166,14 @@ window.onGoogleLibraryLoad = function() {
     client_id: CLIENT_ID,
     scope: SCOPE,
     callback: async (resp) => {
-      if (resp.error) { alert("Auth error: " + resp.error); return; }
+      if (resp.error) { showSigninError("Sign-in error: " + resp.error); return; }
       accessToken = resp.access_token;
+      try {
+        const profile = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+          headers: {"Authorization":"Bearer " + accessToken}
+        }).then(r => r.json());
+        document.getElementById("userInfo").textContent = profile.email || "";
+      } catch(e) {}
       document.getElementById("signinView").style.display = "none";
       document.getElementById("mainView").style.display = "block";
       setTodayDate();

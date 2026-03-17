@@ -9,7 +9,6 @@
 <meta name="apple-mobile-web-app-title" content="Logbook"/>
 <title>Surgical Logbook</title>
 <link rel="apple-touch-icon" href="icon.png"/>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#1a1a1a;min-height:100vh}
@@ -65,6 +64,337 @@ textarea{resize:vertical}
       data-callback="onGoogleSignIn"
       data-auto_select="true">
     </div>
+    <div class="g_id_signin"
+      data-type="standard"
+      data-size="large"
+      data-theme="outline"
+      data-text="sign_in_with"
+      data-shape="rectangular"
+      data-logo_alignment="left">
+    </div>
+  </div>
+
+  <div id="mainView" style="display:none">
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('entry')" id="tab-entry">New case</button>
+      <button class="tab" onclick="switchTab('log')" id="tab-log">Log</button>
+    </div>
+
+    <div id="view-entry">
+      <div class="card">
+        <div id="editBanner" style="display:none;font-size:13px;color:#888;margin-bottom:12px">Editing existing case</div>
+        <div class="grid2">
+          <div><label>Patient number</label><input id="f-PtNumber" placeholder="e.g. 001"/></div>
+          <div><label>Age (years)</label><input id="f-AgeYears" type="number" placeholder="e.g. 65"/></div>
+        </div>
+        <div class="grid2">
+          <div><label>Date of operation</label><input id="f-DateOfOperation" type="date"/></div>
+          <div><label>CEPOD</label>
+            <select id="f-CEPOD"><option>Elective</option><option>Urgent</option><option>Emergency</option><option>Immediate</option></select>
+          </div>
+        </div>
+        <div class="grid2">
+          <div><label>ASA grade</label>
+            <select id="f-ASA"><option>I</option><option>II</option><option>III</option><option>IV</option><option>V</option></select>
+          </div>
+          <div><label>Supervision</label>
+            <select id="f-Supervision"><option>Surgeon</option><option>Supervised</option><option>Assisted</option><option>Observed</option></select>
+          </div>
+        </div>
+        <div class="mb"><label>Responsible consultant</label><input id="f-ResponsibleConsultant" placeholder="Surname"/></div>
+        <div class="mb" style="position:relative">
+          <label>Operation <span style="color:#c0392b">*</span></label>
+          <input id="f-Operation" autocomplete="off" placeholder="Type to search procedures..."
+            oninput="onOpInput(this.value)"
+            onkeydown="onOpKey(event)"
+            onblur="setTimeout(hideSug,150)"/>
+          <div class="suggest" id="suggestions" style="display:none"></div>
+        </div>
+        <div class="mb"><label>Hospital</label><input id="f-Hospital" placeholder="e.g. St Thomas'"/></div>
+        <div class="mb">
+          <label>Operation notes</label>
+          <textarea id="f-OperationNotes" rows="3" placeholder="Findings, complications, outcome..."></textarea>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn" onclick="saveCase()" id="saveBtn">Save case</button>
+          <button class="btn" onclick="cancelEdit()" id="cancelBtn" style="display:none">Cancel</button>
+          <span id="saveStatus" class="status"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-log" style="display:none">
+      <div class="search-row">
+        <input placeholder="Search cases..." oninput="renderLog(this.value)"/>
+        <button class="btn" onclick="exportCSV()">Export CSV</button>
+      </div>
+      <div id="lastSync" class="last-sync"></div>
+      <div id="logList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SHEET_ID = "1WyspYrH5nr1J65ZSqqiRF2TLvcnlLfLq9mojWSGgHgM";
+const SHEET_NAME = "Sheet1";
+const CLIENT_ID = "510995347454-4hjfoptvsf36asgfqipq779lvop92296.apps.googleusercontent.com";
+const SCOPE = "https://www.googleapis.com/auth/spreadsheets";
+const COLS = ["PtNumber","AgeYears","DateOfOperation","CEPOD","ASA","ResponsibleConsultant","Supervision","Operation","Hospital","OperationNotes"];
+const PROCEDURES = ["AV fistula, PTFE loop graft groin","AV fistula, PTFE straight graft arm","AV fistula, basilic vein transposition","AV fistula, brachiocephalic","AV fistula, radiocephalic","Above knee","Aortic Stent","Aortic endarterectomy","Aortobi-iliac bypass","Aortobifemoral graft","Aortoiliac aneurysm +/- int iliac embolisation","Aortounifemoral bypass","Application of negative pressure dressing","Arm fasciotomies","Arterial embolistaion","Arterial line insertion","Arterial thrombolysis","Arterial thrombolysis and angioplasty / stent","Axillofem/bifemoral bypass","Banding of AV fistula","Below knee - Burgess flap","Below knee - skew flap","Biopsy of leg ulcer","Brachial embolectomy","Branched stent graft","Carotid - Carotid bypass","Carotid - subclavian bypass","Carotid endartarectomy - no patch","Carotid endartarectomy and Patch","Carotid interposition graft","Change of negative pressure dressing","Conduit for endovascular access","Crural artery angioplasty","Crural artery stent","Deep venous reconstruction - IVC","Deep venous reconstruction - iliac","Deep venous stenting - iliac","Diagnostic Femoral angiogram","Diagnostic Laparotomy","EVAR planning","Embolisation of other visceral artery","Exploration of arm wound +/- vessels","Fem-Fem bypass (ipsilateral and crossover)","Fem-Fem bypass / interposition graft / Repair","Femoral artery angioplasty","Femoral artery endartarectomy +/- Patch","Femoral artery stent","Femoral embolectomy","Femoro - Above knee popliteal - Prosthetic","Femoro - Above knee popliteal - Vein","Femoro - Below knee popliteal - Vein","Femoro - Crural - Prosthetic","Femoro - Crural - Vein","Fenestrated stent graft","First rib excision - Supraclavicular","Fistula/graft thrombectomy","Foam sclerotherapy, GSV truncal","Foam sclerotherapy, SSV truncal","Foam sclerotherapy, varicosities","Full thickness skin graft","GSV truncal ablation","GSV truncal ablation + foam sclerotherapy","GSV truncal ablation + phlebectomies","General Surgery","Gritti-stokes","IVC filter - insertion","IVC filter - removal","Iliac Angioplasty","Iliac Artery Stent","Iliac Endarterectomy +/- patch closure","Iliofemoral bypass","Infrarenal bifurcated - femoral","Infrarenal bifurcated - iliac","Infrarenal tube graft","Insertion of ambulatory peritoneal dialysis catheter","Insertion of non tunnelled central venous catheter","Internal iliac embolisation","Juxta/pararenal, inter or suprarenal clamp","Kissing Iliac Artery stents","Laparotomy and adhesiolysis/ Division of band adhesion","Ligation of artery","Ligation of fistula","Ligation of vein","Lower limb - 4 compartment fasciotomies","Lower limb arterial embolisation (not femoral)","Major debridement eg nec fasc/ gangrene","Minor debridement (non diabetic foot) eg wound edges","Multiple phlebectomies","Open Surgical Nephrectomy","Other","Other fasciotomies","Other venous embolisation","Percutaneous clot aspiration","Pharmaco-mechanical venous thrombolysis","Popliteal aneurysm repair- posterior approach/ interposition graft","Popliteal artery angioplasty","Popliteal artery stent","Popliteal embolectomy","Profundaplasty","Removal of Hickman line/ tunneled central venous catheter","Removal of ambulatory peritoneal dialysis catheter","Removal of carotid body tumour","Removal of central vein catheter","Removal of infected interposition graft","Removal of portacath","Renal allotransplant","Renal autotransplant","Repair of artery - Trauma, not subclavian","Repair of carotid aneurysm","Repair of visceral artery aneurysm","Revision of fistula (incl bleeding, aneurysm, occlusive disease)","Revision Of Previous Amputation (Amputation-Lower Limb)","SSV truncal ablation","SSV truncal ablation + foam sclerotherapy","Sartorius muscle flap","Split Skin Graft","St Mary's boot","Standard infrarenal EVAR","Stent of other visceral artery","Temporal artery biopsy","Thigh fasciotomies","Thoracic stent graft","Thoracoabdominal, supracoeliac clamp","Through knee","Toe - great","Toe(s), other","Transmetatarsal","Trauma Laparotomy + Damage Control","Venogram","Visceral aspiration/mechanical thrombo-embolectomy","Work bench preparation of kidney","ligation bleeding vessel"];
+
+const REDIRECT_URI = "https://dennislui.github.io/AddToLogbook/";
+let accessToken = null;
+let allEntries = [];
+let editRowIndex = null;
+let lastExportTime = localStorage.getItem("logbook_last_export") || null;
+let sugFiltered = [];
+let activeIdx = -1;
+
+function startSignIn() {
+  const state = Math.random().toString(36).slice(2);
+  sessionStorage.setItem("oauth_state", state);
+  const params = new URLSearchParams({
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: "token",
+    scope: SCOPE,
+    state,
+    include_granted_scopes: "true"
+  });
+  window.location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + params.toString();
+}
+
+function handleRedirectToken() {
+  const hash = window.location.hash.substring(1);
+  if (!hash) return false;
+  const params = new URLSearchParams(hash);
+  const token = params.get("access_token");
+  const state = params.get("state");
+  if (!token) return false;
+  const savedState = sessionStorage.getItem("oauth_state");
+  if (state && savedState && state !== savedState) {
+    document.getElementById("signinError").textContent = "Auth state mismatch — please try again.";
+    document.getElementById("signinError").style.display = "block";
+    return false;
+  }
+  accessToken = token;
+  history.replaceState(null, "", REDIRECT_URI);
+  return true;
+}
+
+async function init() {
+  const authed = handleRedirectToken();
+  if (authed) {
+    try {
+      const profile = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: {"Authorization":"Bearer " + accessToken}
+      }).then(r => r.json());
+      document.getElementById("userInfo").textContent = profile.email || "";
+    } catch(e) {}
+    document.getElementById("signinView").style.display = "none";
+    document.getElementById("mainView").style.display = "block";
+    setTodayDate();
+    await loadEntries();
+  } else {
+    document.getElementById("signinView").style.display = "flex";
+  }
+}
+
+window.addEventListener("load", init);
+
+function setTodayDate() {
+  document.getElementById("f-DateOfOperation").value = new Date().toISOString().slice(0,10);
+}
+
+async function apiRequest(method, path, body) {
+  const base = "https://sheets.googleapis.com/v4/spreadsheets/" + SHEET_ID;
+  const res = await fetch(base + path, {
+    method,
+    headers: {"Authorization":"Bearer " + accessToken, "Content-Type":"application/json"},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  return res.json();
+}
+
+async function loadEntries() {
+  const data = await apiRequest("GET", "/values/" + SHEET_NAME);
+  const rows = data.values || [];
+  allEntries = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length === 0) continue;
+    const entry = {};
+    COLS.forEach((c, j) => entry[c] = row[j] || "");
+    entry._row = i + 1;
+    allEntries.push(entry);
+  }
+  if (rows.length === 0) {
+    await apiRequest("PUT", "/values/" + SHEET_NAME + "!A1?valueInputOption=RAW", {values:[COLS]});
+  }
+  updateLogCount();
+  renderLog("");
+  const el = document.getElementById("lastSync");
+  if (el) el.textContent = "Last synced: " + new Date().toLocaleTimeString("en-GB");
+}
+
+function updateLogCount() {
+  document.getElementById("tab-log").textContent = "Log (" + allEntries.length + ")";
+}
+
+async function saveCase() {
+  const op = document.getElementById("f-Operation").value.trim();
+  const date = document.getElementById("f-DateOfOperation").value;
+  if (!op || !date) { setStatus("saveStatus","Operation and date required","error"); return; }
+  const row = COLS.map(c => { const el = document.getElementById("f-"+c); return el ? el.value.trim() : ""; });
+  setStatus("saveStatus","<span class='spinner'></span>Saving...");
+  document.getElementById("saveBtn").disabled = true;
+  if (editRowIndex !== null) {
+    await apiRequest("PUT", "/values/" + SHEET_NAME + "!A" + editRowIndex + "?valueInputOption=RAW", {values:[row]});
+    setStatus("saveStatus","Updated");
+    cancelEdit();
+  } else {
+    await apiRequest("POST", "/values/" + SHEET_NAME + "!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS", {values:[row]});
+    setStatus("saveStatus","Saved");
+    clearForm();
+  }
+  document.getElementById("saveBtn").disabled = false;
+  await loadEntries();
+  setTimeout(() => setStatus("saveStatus",""), 2500);
+}
+
+function clearForm() {
+  COLS.forEach(c => {
+    const el = document.getElementById("f-"+c);
+    if (!el) return;
+    if (el.tagName === "SELECT") {
+      if (c==="CEPOD") el.value="Elective";
+      else if (c==="ASA") el.value="II";
+      else if (c==="Supervision") el.value="Assisted";
+    } else if (c==="DateOfOperation") {
+      el.value = new Date().toISOString().slice(0,10);
+    } else {
+      el.value = "";
+    }
+  });
+}
+
+function editEntry(rowJson) {
+  const entry = JSON.parse(rowJson);
+  COLS.forEach(c => { const el = document.getElementById("f-"+c); if (el) el.value = entry[c] || ""; });
+  editRowIndex = entry._row;
+  document.getElementById("editBanner").style.display = "block";
+  document.getElementById("saveBtn").textContent = "Update case";
+  document.getElementById("cancelBtn").style.display = "inline-block";
+  document.getElementById("tab-entry").textContent = "Edit case";
+  switchTab("entry");
+  window.scrollTo(0,0);
+}
+
+function cancelEdit() {
+  editRowIndex = null;
+  clearForm();
+  document.getElementById("editBanner").style.display = "none";
+  document.getElementById("saveBtn").textContent = "Save case";
+  document.getElementById("cancelBtn").style.display = "none";
+  document.getElementById("tab-entry").textContent = "New case";
+}
+
+async function deleteEntry(rowJson) {
+  const entry = JSON.parse(rowJson);
+  if (!confirm("Delete this case?")) return;
+  const meta = await apiRequest("GET","?fields=sheets.properties");
+  const sheetId = meta.sheets[0].properties.sheetId;
+  await apiRequest("POST",":batchUpdate",{
+    requests:[{deleteDimension:{range:{sheetId,dimension:"ROWS",startIndex:entry._row-1,endIndex:entry._row}}}]
+  });
+  await loadEntries();
+}
+
+function renderLog(query) {
+  const list = document.getElementById("logList");
+  const q = (query||"").toLowerCase();
+  const filtered = q ? allEntries.filter(e => Object.values(e).join(" ").toLowerCase().includes(q)) : allEntries;
+  if (filtered.length === 0) { list.innerHTML = '<p class="empty">No cases logged yet.</p>'; return; }
+  list.innerHTML = filtered.slice().reverse().map(entry => {
+    const safe = JSON.stringify(entry).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+    return `<div class="card">
+      <div class="entry-row">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${entry.Operation}</div>
+          <div class="entry-meta">${entry.DateOfOperation} &middot; ${entry.Hospital} &middot; ${entry.Supervision} &middot; ASA ${entry.ASA} &middot; ${entry.CEPOD}${entry.ResponsibleConsultant ? " &middot; "+entry.ResponsibleConsultant : ""}</div>
+          ${entry.OperationNotes ? '<div class="entry-notes">'+entry.OperationNotes+'</div>' : ""}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button class="btn-sm" onclick="editEntry('${safe}')">Edit</button>
+          <button class="btn-sm btn-danger" onclick="deleteEntry('${safe}')">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+function exportCSV() {
+  const toExport = lastExportTime
+    ? allEntries.filter(e => new Date(e.DateOfOperation) >= new Date(lastExportTime))
+    : allEntries;
+  if (toExport.length === 0) { alert("No new entries to export."); return; }
+  const rows = [COLS.join(","), ...toExport.map(e =>
+    COLS.map(c => { const v = String(e[c]||""); return v.includes(",")||v.includes('"')||v.includes("\n") ? '"'+v.replace(/"/g,'""')+'"' : v; }).join(",")
+  )].join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([rows],{type:"text/csv"}));
+  a.download = "logbook_export_" + new Date().toISOString().slice(0,10) + ".csv";
+  a.click();
+  lastExportTime = new Date().toISOString();
+  localStorage.setItem("logbook_last_export", lastExportTime);
+}
+
+function switchTab(t) {
+  document.getElementById("view-entry").style.display = t==="entry" ? "block" : "none";
+  document.getElementById("view-log").style.display = t==="log" ? "block" : "none";
+  document.querySelectorAll(".tab").forEach(el => el.classList.remove("active"));
+  document.getElementById("tab-"+t).classList.add("active");
+  if (t==="log") renderLog("");
+}
+
+function setStatus(id, msg, type) {
+  const el = document.getElementById(id);
+  el.innerHTML = msg;
+  el.className = "status" + (type==="error" ? " error" : "");
+}
+
+function onOpInput(v) {
+  sugFiltered = v.length > 0 ? PROCEDURES.filter(p => p.toLowerCase().includes(v.toLowerCase())).slice(0,8) : [];
+  activeIdx = -1;
+  const box = document.getElementById("suggestions");
+  if (sugFiltered.length === 0) { box.style.display="none"; return; }
+  box.innerHTML = sugFiltered.map((p,i) => '<div class="suggest-item" onmousedown="selectOp(this.dataset.val)" data-val="'+p.replace(/"/g,'&quot;')+'">'+p+'</div>').join("");
+  box.style.display = "block";
+}
+
+function onOpKey(e) {
+  if (sugFiltered.length === 0) return;
+  if (e.key==="ArrowDown") { e.preventDefault(); activeIdx=Math.min(activeIdx+1,sugFiltered.length-1); highlightSug(); }
+  else if (e.key==="ArrowUp") { e.preventDefault(); activeIdx=Math.max(activeIdx-1,0); highlightSug(); }
+  else if (e.key==="Enter" && activeIdx>=0) { e.preventDefault(); selectOp(sugFiltered[activeIdx]); }
+  else if (e.key==="Escape") hideSug();
+}
+
+function highlightSug() {
+  document.querySelectorAll(".suggest-item").forEach((el,i) => el.classList.toggle("active",i===activeIdx));
+}
+
+function selectOp(p) {
+  document.getElementById("f-Operation").value = p;
+  hideSug();
+}
+
+function hideSug() {
+  document.getElementById("suggestions").style.display = "none";
+}
+</script>
+</body>
+</html>    </div>
     <div class="g_id_signin"
       data-type="standard"
       data-size="large"
